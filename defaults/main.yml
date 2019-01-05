@@ -1,0 +1,5 @@
+---
+krb_server: 'krbserver.example.com'
+
+krb_active_users: []
+krb_server_dir_data: "{{ krb_dir_data }}"

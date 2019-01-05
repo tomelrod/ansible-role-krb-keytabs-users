@@ -1,0 +1,87 @@
+---
+- name: Include OS-specific variables for the krb server
+  #include_vars: "{{ ansible_os_family }}.yml"
+  include_vars: "RedHat.yml"
+
+- name: Install kstart
+  package:
+    name: kstart
+    state: installed
+
+- name: Ensure the keytab directory exists
+  file:
+    path: "/etc/keytabs"
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: Check if the keytabs exist
+  stat:
+    path: "/etc/keytabs/krb5.{{ item }}.keytab"
+  register: krb_keytab_add
+  with_items: "{{ krb_active_users }}"
+
+#- name: Copy user keytabs over to the clients
+#  synchronize:
+#    src: "{{ krb_server_dir_data }}/records/keys/{{ item.item }}.keytab"
+#    dest: "/etc/keytabs/krb5.{{ item.item }}.keytab"
+#  when: item.stat.exists == False
+#  with_items: "{{ krb_keytab_add.results }}"
+#  delegate_to: "{{ krb_server }}"
+
+
+#- name: Set user privileges to the keytabs
+#  file:
+#    path: "/etc/keytabs/krb5.{{ item.item }}.keytab"
+#    owner: "{{ item.item }}"
+#    mode: 0600
+#  when: item.stat.exists == False
+#  with_items: "{{ krb_keytab_add.results }}"
+
+
+- name: Fetch user keytabs from the kerberos server
+  fetch:
+    src: "{{ krb_server_dir_data }}/records/keys/{{ item.item }}.keytab"
+    dest: "./"
+    flat: True
+  when: item.stat.exists == False
+  with_items: "{{ krb_keytab_add.results }}"
+  delegate_to: "{{ krb_server }}"
+
+- name: Copy user keytabs to the kerberos client
+  copy:
+    src: "./{{ item.item }}.keytab"
+    dest: "/etc/keytabs/krb5.{{ item.item }}.keytab"
+    owner: "{{ item.item }}"
+    mode: 0600
+  when: item.stat.exists == False
+  with_items: "{{ krb_keytab_add.results }}"
+
+- name: Remove local copies
+  file:
+    path: "./{{ item.item }}.keytab"
+    state: absent
+  when: item.stat.exists == False
+  with_items: "{{ krb_keytab_add.results }}"
+  delegate_to: "localhost"
+  failed_when: False
+
+
+- name: Create k5start unit files for each user
+  template:
+    src: k5start.service.j2
+    dest: "/etc/systemd/system/k5start-user.{{ item }}.service"
+  with_items: "{{ krb_active_users }}"
+  notify:
+    - reload systemd
+
+- name: Flush Handlers
+  meta: flush_handlers
+
+- name: Enable/Start all k5start unit files
+  service:
+    name: "k5start-user.{{ item }}"
+    state: started
+    enabled: yes
+  with_items: "{{ krb_active_users }}"

@@ -1,0 +1,13 @@
+[Unit]
+Description=Initializes Keytab for user {{ item }}
+After=network.target
+#Before=SERVICE.service
+
+[Service]
+Type=forking
+ExecStart=/usr/bin/k5start -b -K 10 -f /etc/keytabs/krb5.{{ item }}.keytab
+User={{ item }}
+
+[Install]
+WantedBy=multi-user.target
+WantedBy=nfs-client.target
